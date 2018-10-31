@@ -1,0 +1,150 @@
+close all
+clear all
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Read images
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%imargb = double(imread('keble_a.jpg'))/255;
+%imbrgb = double(imread('keble_b.jpg'))/255;
+
+imargb = double(imread('./PUIO/set-1.jpg'))/255;
+imbrgb = double(imread('./PUIO/set-2.jpg'))/255;
+
+imargb = double(imread('trees_000.jpg'))/255;
+imbrgb = double(imread('trees_001.jpg'))/255;
+
+
+% create grayscale version of each image 
+% used for detecting and describing local features
+ima = rgb2gray(imargb);
+imb = rgb2gray(imbrgb);
+
+
+% show images
+figure(1); clf;
+subplot(1,2,1); imshow(imargb); axis image; axis off; title('Image a');
+subplot(1,2,2); imshow(imbrgb); axis image; axis off; title('Image b');
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% SIFTS
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+addpath('siftDemoV4')
+[desc1, loc1] = sift(ima);
+[desc2, loc2] = sift(imb);
+
+
+
+matches=sift_matcher(desc1, loc1, desc2, loc2,0.8);
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Lowe uses an other convention for (x,y) axis: convertion.
+xat       = matches(:,2)';
+yat       = matches(:,1)';
+xbt       = matches(:,4)';
+ybt       = matches(:,3)';
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+% show all tentative matches
+figure(1); clf;
+imshow(imargb); hold on;
+plot(xat,yat,'+g');
+hl = line([xat; xbt],[yat; ybt],'color','y');
+title('Tentative correspondences');
+axis off;
+
+% 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Robustly fit homography
+%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Specify the inlier threshold (in noramlized image co-ordinates)
+%for test
+inliers=1:size(xat,2); %% change to arbitrary 4 points
+Hab = compute_homography_DLT([xat(inliers); yat(inliers)], [xbt(inliers) ;ybt(inliers)]);
+
+t = 0.1;  %% treshold for model valid.
+[Hab, inliers] = ransacfithomography([xat; yat], [xbt ;ybt], t);
+
+
+%homography_test(ima,imb)
+% show inliers
+figure(4); clf;
+imshow(imargb); hold on;
+hl = line([xat(inliers); xbt(inliers)],[yat(inliers); ybt(inliers)]);
+set(hl,'color','y');
+plot(xat(inliers),yat(inliers),'+g');
+title('Inliers');
+
+% 
+% 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Visualize homography
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+vgg_gui_H(ima,imb,Hab);
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+% Warp and composite images
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% compute panorama bounding box
+% 
+close all
+[m,n,~]=size(imbrgb);
+
+bb=
+% compute xmin xmax ymin ymax for I2
+H=Hab;
+y1 = H*[[1;1;1], [1;m;1], [n;m;1] [n;1;1]];
+    y1(1,:) = y1(1,:)./y1(3,:);
+    y1(2,:) = y1(2,:)./y1(3,:);
+    
+    
+    bb1 = [
+      ceil(min(y1(1,:)));
+      ceil(max(y1(1,:)));
+      ceil(min(y1(2,:)));
+      ceil(max(y1(2,:)));
+      ];
+% same for I1
+H=eye(3);
+y2 = H*[[1;1;1], [1;m;1], [n;m;1] [n;1;1]];
+    y2(1,:) = y2(1,:)./y2(3,:);
+    y2(2,:) = y2(2,:)./y2(3,:); %  division is here useless
+    
+    bb2 = [
+      ceil(min(y2(1,:)));
+      ceil(max(y2(1,:)));
+      ceil(min(y2(2,:)));
+      ceil(max(y2(2,:)));
+      ];
+
+bb=[min(bb1(1),bb2(1)) max(bb1(2),bb2(2)) min(bb1(3),bb2(3)) max(bb1(4),bb2(4))];
+
+figure(5); clf;
+
+% warp image b to mosaic image using an identity homogrpahy
+% Image b is chosen as the reference frame
+iwb = vgg_warp_H(imbrgb, eye(3), 'cubic',bb);
+imshow(iwb); axis image;
+
+% warp image 1 to the reference mosaic frame (image 2) 
+figure(6); clf;
+
+iwa = vgg_warp_H(imargb, Hab, 'cubic',bb);  % warp image a to the mosaic image
+imshow(iwa); axis image;
+figure;imshow(double(max(iwb,iwa))); % combine images into a common mosaic (take maximum value of the two images)
+area_of_overlap=and(~isnan(iwa),~isnan(iwb));
+figure;
+imshow(sum(area_of_overlap,3))
+figure;imshow(sum(area_of_overlap,3));
+average=max(iwb,iwa);
+figure;
+imshow(average)
+
+average(area_of_overlap)=(iwa(area_of_overlap)+iwb(area_of_overlap))/2;
+figure;
+imshow(average);
+
+
+
+
+
